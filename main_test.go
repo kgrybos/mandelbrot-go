@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/deeean/go-vector/vector2"
+	"github.com/kgrybos/mandelbrot-go/color"
 )
 
 func BenchmarkCheckMandelbrot(b *testing.B) {
@@ -20,7 +21,7 @@ func BenchmarkCheckMandelbrot(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		CheckMandelbrot(points)
+		CheckMandelbrot(points, PrecisionInfo{precision: 0.1, mindiv: 0.5, maxiter: -1})
 	}
 }
 
@@ -30,7 +31,8 @@ func BenchmarkGenerateFrame(b *testing.B) {
 			vector2.Vector2{X: -1.162779, Y: 0.2713448},
 			0.001,
 			700,
-			makeColorPalette(200),
+			PrecisionInfo{precision: 0.1, mindiv: 0.5, maxiter: -1},
+			color.MakeColorPalette(200),
 			8,
 		)
 	}
