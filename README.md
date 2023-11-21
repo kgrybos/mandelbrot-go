@@ -2,7 +2,7 @@
 
 Program napisany w `go` generujący animację przybliżania w zbiorze Mandelbrota.
 
-<img src="mandelbrot-zoom.gif" alt="Screenshot symulacji" width=700>
+<img src="mandelbrot-zoom.gif" alt="Screenshot symulacji" width=320>
 
 ## Kompilacja
 
