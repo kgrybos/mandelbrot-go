@@ -31,6 +31,7 @@ func BenchmarkGenerateFrame(b *testing.B) {
 			0.001,
 			700,
 			makeColorPalette(200),
+			8,
 		)
 	}
 }

@@ -37,7 +37,6 @@ func CheckMandelbrot(points []complex128) []int {
 	totalPoints := 0
 	for {
 		pointsChanged := 0
-		// fmt.Println(iterations)
 		for pointI, point := range points {
 			if mandelbrotIters[pointI] == -1 {
 				var i int
@@ -70,7 +69,7 @@ func CheckMandelbrot(points []complex128) []int {
 	return mandelbrotIters
 }
 
-// makeColorPalette create array of HSV encoded colors
+// makeColorPalette creates array of HSV encoded colors
 // that are ordered by hue.
 func makeColorPalette(number int) []HSV {
 	colors := make([]HSV, number)
@@ -81,37 +80,87 @@ func makeColorPalette(number int) []HSV {
 	return colors
 }
 
-func generateFrame(
-	center vector2.Vector2,
-	size float64,
-	imageSize int,
+// worker processes part of Mandelbrot image
+func worker(
+	upperLeft vector2.Vector2,
+	step float64,
 	colorPallete []HSV,
-) *image.RGBA {
-	points := make([]complex128, 0, imageSize*imageSize)
-	for x := 0; x < imageSize; x++ {
-		for y := 0; y < imageSize; y++ {
-			real := center.X - size/2 + size*float64(x)/float64(imageSize)
-			im := center.Y - size/2 + size*float64(y)/float64(imageSize)
+	image *image.RGBA,
+	region image.Rectangle,
+	completionChannel chan struct{},
+) {
+	width := region.Dx()
+	height := region.Dy()
+	points := make([]complex128, 0, width*height)
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			real := upperLeft.X + float64(x)*step
+			im := upperLeft.Y + float64(y)*step
 			points = append(points, complex(real, im))
 		}
 	}
 
 	mandelbrotIters := CheckMandelbrot(points)
 
-	image := image.NewRGBA(image.Rect(0, 0, imageSize, imageSize))
-	for x := 0; x < imageSize; x++ {
-		for y := 0; y < imageSize; y++ {
-			iterations := mandelbrotIters[x*imageSize+y]
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			iterations := mandelbrotIters[x*height+y]
 
 			color := HSV{0, 0, 0}
 			if iterations >= 0 {
 				color = colorPallete[iterations%colorNumber]
 			}
-			image.Set(x, y, color)
+			image.Set(region.Min.X+x, region.Min.Y+y, color)
 		}
 	}
 
-	return image
+	completionChannel <- struct{}{}
+}
+
+// generateFrame creates new Mandelbrot set image
+func generateFrame(
+	center vector2.Vector2,
+	size float64,
+	imageSize int,
+	colorPallete []HSV,
+	numberWorkers int,
+) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, imageSize, imageSize))
+	completionChannel := make(chan struct{})
+
+	upperLeft := *center.SubScalar(size / 2)
+	rowsPerWorker := imageSize / numberWorkers
+	sizePerWorker := size / float64(numberWorkers)
+	step := size / float64(imageSize)
+	for i := 0; i < numberWorkers; i++ {
+		lastWorker := 0
+		if i == numberWorkers-1 {
+			lastWorker = imageSize - rowsPerWorker*numberWorkers
+		}
+
+		region := image.Rect(
+			0,
+			i*rowsPerWorker,
+			imageSize,
+			i*rowsPerWorker+rowsPerWorker+lastWorker,
+		)
+
+		go worker(
+			upperLeft,
+			step,
+			colorPallete,
+			img,
+			region,
+			completionChannel,
+		)
+		upperLeft.Y += sizePerWorker
+	}
+
+	for i := 0; i < numberWorkers; i++ {
+		<-completionChannel
+	}
+
+	return img
 }
 
 const windowSize = 700
@@ -129,8 +178,8 @@ func main() {
 	defer cpufile.Close()
 	defer pprof.StopCPUProfile()
 
-	x := -1.162779
-	y := 0.2713448
+	x := -1.16278126
+	y := 0.27134518
 	if len(os.Args) == 3 {
 		var err error
 		x, err = strconv.ParseFloat(os.Args[1], 64)
@@ -144,7 +193,7 @@ func main() {
 		}
 	} else {
 		fmt.Println("Użycie: ./mandelbrot-go <x> <y>")
-		fmt.Printf("Domyślny punkt: %f %f", x, y)
+		fmt.Printf("Domyślny punkt: %.10f %.10f\n", x, y)
 	}
 
 	center := vector2.Vector2{X: x, Y: y}
@@ -153,23 +202,24 @@ func main() {
 	w := app.NewWindow("Mandelbrot set")
 	w.Resize(fyne.NewSize(windowSize, windowSize))
 
-	go func() {
-		size := float64(2)
-		colorPallete := makeColorPalette(colorNumber)
+	img := image.NewRGBA(image.Rect(0, 0, windowSize, windowSize))
+	canvasImage := canvas.NewImageFromImage(img)
+	w.SetContent(canvasImage)
 
+	size := float64(2)
+	colorPallete := makeColorPalette(colorNumber)
+	go func() {
 		for {
 			frame := generateFrame(
 				center,
 				size,
 				windowSize,
 				colorPallete,
+				8,
 			)
-			img := canvas.NewImageFromImage(frame)
-			w.SetContent(img)
-
+			canvasImage.Image = frame
+			canvasImage.Refresh()
 			size *= 0.9
-			// fmt.Println("==================")
-			// fmt.Println(size)
 		}
 	}()
 
