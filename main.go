@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"github.com/deeean/go-vector/vector2"
+	"github.com/kgrybos/mandelbrot-go/color"
 )
 
 func doIter(iterations int, z, point complex128) (int, complex128) {
@@ -74,24 +75,12 @@ func CheckMandelbrot(points []complex128, precisionInfo PrecisionInfo) []int {
 	return mandelbrotIters
 }
 
-// makeColorPalette creates array of HSV encoded colors
-// that are ordered by hue.
-func makeColorPalette(number int) []HSV {
-	colors := make([]HSV, number)
-	for i := 0; i < number; i++ {
-		color := 30 + uint16(210./float64(number)*float64(i))
-		colors[i] = HSV{color, 1, 1}
-	}
-	return colors
-}
-
 // worker processes part of Mandelbrot image
 func worker(
 	upperLeft vector2.Vector2,
 	step float64,
 	precisionInfo PrecisionInfo,
-	colorPallete []HSV,
-	colorNumber int,
+	colorPallete color.ColorCycle,
 	image *image.RGBA,
 	region image.Rectangle,
 	completionChannel chan struct{},
@@ -113,9 +102,9 @@ func worker(
 		for y := 0; y < height; y++ {
 			iterations := mandelbrotIters[x*height+y]
 
-			color := HSV{0, 0, 0}
+			color := color.HSV{H: 0, S: 0, V: 0}
 			if iterations >= 0 {
-				color = colorPallete[iterations%colorNumber]
+				color = colorPallete.Get(iterations)
 			}
 			image.Set(region.Min.X+x, region.Min.Y+y, color)
 		}
@@ -130,8 +119,7 @@ func generateFrame(
 	size float64,
 	imageSize int,
 	precisionInfo PrecisionInfo,
-	colorPallete []HSV,
-	colorNumber int,
+	colorPallete color.ColorCycle,
 	numberWorkers int,
 ) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, imageSize, imageSize))
@@ -159,7 +147,6 @@ func generateFrame(
 			step,
 			precisionInfo,
 			colorPallete,
-			colorNumber,
 			img,
 			region,
 			completionChannel,
@@ -242,7 +229,7 @@ func main() {
 	w.SetContent(canvasImage)
 
 	size := float64(2)
-	colorPallete := makeColorPalette(*numberColors)
+	colorPallete := color.MakeColorPalette(*numberColors)
 	go func() {
 		for {
 			frame := generateFrame(
@@ -255,7 +242,6 @@ func main() {
 					maxiter:   *maxiter,
 				},
 				colorPallete,
-				*numberColors,
 				*numberWorkers,
 			)
 			canvasImage.Image = frame

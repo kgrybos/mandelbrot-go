@@ -1,4 +1,4 @@
-package main
+package color
 
 import "math"
 
@@ -47,4 +47,21 @@ func (color HSV) RGBA() (r, g, b, a uint32) {
 	b = uint32((bf + m) * 0xffff)
 	a = 0xffff
 	return r, g, b, a
+}
+
+type ColorCycle []HSV
+
+func (cycle ColorCycle) Get(n int) HSV {
+	return cycle[n%len(cycle)]
+}
+
+// makeColorPalette creates array of HSV encoded colors
+// that are ordered by hue.
+func MakeColorPalette(number int) ColorCycle {
+	colors := make([]HSV, number)
+	for i := 0; i < number; i++ {
+		color := 30 + uint16(210./float64(number)*float64(i))
+		colors[i] = HSV{color, 1, 1}
+	}
+	return colors
 }
