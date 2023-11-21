@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"image"
-	"math/cmplx"
 	"os"
+	"runtime/pprof"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -12,6 +12,16 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"github.com/deeean/go-vector/vector2"
 )
+
+func doIter(iterations int, z, point complex128) (int, complex128) {
+	for i := 0; i < iterations; i++ {
+		z = z*z + point
+		if real(z)*real(z)+imag(z)*imag(z) >= 4 {
+			return i, z
+		}
+	}
+	return -1, z
+}
 
 // CheckMandelbrot checks how many iterations are needed
 // to establish if a point is a part of the mandelbrot set.
@@ -28,21 +38,15 @@ func CheckMandelbrot(points []complex128) []int {
 	for {
 		pointsChanged := 0
 		// fmt.Println(iterations)
-		for pointI := range points {
-			point := points[pointI]
-			z := zs[pointI]
-
+		for pointI, point := range points {
 			if mandelbrotIters[pointI] == -1 {
-				for i := currentIteration; i < iterations; i++ {
-					z = z*z + point
-					if cmplx.Abs(z) >= 2 {
-						mandelbrotIters[pointI] = i
-						pointsChanged++
-						totalPoints++
-						break
-					}
+				var i int
+				i, zs[pointI] = doIter(iterations-currentIteration, zs[pointI], point)
+				if i != -1 {
+					mandelbrotIters[pointI] = currentIteration + i
+					pointsChanged++
+					totalPoints++
 				}
-				zs[pointI] = z
 			}
 		}
 
@@ -114,6 +118,17 @@ const windowSize = 700
 const colorNumber = 200
 
 func main() {
+	cpufile, err := os.Create("cpu.pprof")
+	if err != nil {
+		panic(err)
+	}
+	err = pprof.StartCPUProfile(cpufile)
+	if err != nil {
+		panic(err)
+	}
+	defer cpufile.Close()
+	defer pprof.StopCPUProfile()
+
 	x := -1.162779
 	y := 0.2713448
 	if len(os.Args) == 3 {
