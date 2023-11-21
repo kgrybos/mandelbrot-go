@@ -6,10 +6,10 @@ import (
 	"github.com/deeean/go-vector/vector2"
 )
 
-func BenchmarkCheck_mandelbrot(b *testing.B) {
+func BenchmarkCheckMandelbrot(b *testing.B) {
 	points := make([]complex128, 490000)
-	// center := vector2.Vector2{X: -1.162779, Y: 0.2713448}
-	center := vector2.Vector2{X: 100, Y: 100}
+	center := vector2.Vector2{X: -1.162779, Y: 0.2713448}
+	// center := vector2.Vector2{X: 100, Y: 100}
 	size := 0.001
 	for x := 0; x < 700; x++ {
 		for y := 0; y < 700; y++ {
@@ -20,7 +20,7 @@ func BenchmarkCheck_mandelbrot(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		check_mandelbrot(points)
+		CheckMandelbrot(points)
 	}
 }
 
@@ -30,7 +30,7 @@ func BenchmarkGenerateFrame(b *testing.B) {
 			vector2.Vector2{X: -1.162779, Y: 0.2713448},
 			0.001,
 			700,
-			make_color_palette(200),
+			makeColorPalette(200),
 		)
 	}
 }
