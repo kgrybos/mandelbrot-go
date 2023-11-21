@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image"
 	"os"
@@ -25,7 +26,7 @@ func doIter(iterations int, z, point complex128) (int, complex128) {
 
 // CheckMandelbrot checks how many iterations are needed
 // to establish if a point is a part of the mandelbrot set.
-func CheckMandelbrot(points []complex128) []int {
+func CheckMandelbrot(points []complex128, precisionInfo PrecisionInfo) []int {
 	currentIteration := 0
 	iterations := 128
 	zs := make([]complex128, len(points))
@@ -52,15 +53,19 @@ func CheckMandelbrot(points []complex128) []int {
 		currentIteration = iterations
 		iterations *= 2
 
+		if precisionInfo.maxiter >= 0 && iterations >= precisionInfo.maxiter {
+			break
+		}
+
 		// if every point has diverged break
 		if totalPoints == len(points) {
 			break
 		}
 
 		// at least some point should've diverged
-		if float64(totalPoints)/float64(len(points)) > 0.05 {
+		if float64(totalPoints)/float64(len(points)) > precisionInfo.mindiv {
 			// very few new divergent points since last check
-			if float64(pointsChanged)/float64(len(points)-totalPoints) < 0.01 {
+			if float64(pointsChanged)/float64(len(points)-totalPoints) < precisionInfo.precision {
 				break
 			}
 		}
@@ -84,7 +89,9 @@ func makeColorPalette(number int) []HSV {
 func worker(
 	upperLeft vector2.Vector2,
 	step float64,
+	precisionInfo PrecisionInfo,
 	colorPallete []HSV,
+	colorNumber int,
 	image *image.RGBA,
 	region image.Rectangle,
 	completionChannel chan struct{},
@@ -100,7 +107,7 @@ func worker(
 		}
 	}
 
-	mandelbrotIters := CheckMandelbrot(points)
+	mandelbrotIters := CheckMandelbrot(points, precisionInfo)
 
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
@@ -122,7 +129,9 @@ func generateFrame(
 	center vector2.Vector2,
 	size float64,
 	imageSize int,
+	precisionInfo PrecisionInfo,
 	colorPallete []HSV,
+	colorNumber int,
 	numberWorkers int,
 ) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, imageSize, imageSize))
@@ -148,7 +157,9 @@ func generateFrame(
 		go worker(
 			upperLeft,
 			step,
+			precisionInfo,
 			colorPallete,
+			colorNumber,
 			img,
 			region,
 			completionChannel,
@@ -163,63 +174,93 @@ func generateFrame(
 	return img
 }
 
-const windowSize = 700
-const colorNumber = 200
+type PrecisionInfo struct {
+	precision float64
+	mindiv    float64
+	maxiter   int
+}
 
 func main() {
-	cpufile, err := os.Create("cpu.pprof")
-	if err != nil {
-		panic(err)
+	profFlag := flag.Bool("prof", false, "collect profiling data")
+	numberWorkers := flag.Int("workers", 8, "number of threads")
+	zoom := flag.Float64("zoom", 0.9, "zoom amount per frame (range from 0 to 1)")
+	precision := flag.Float64("precision", 0.01, "precision of Mandelbrot set computation (range from 0 to 1)")
+	minDiv := flag.Float64("mindiv", 0.05, "minimal percent of found divergent points to continue to next frame (range from 0 to 1)")
+	maxiter := flag.Int("maxiter", -1, "maximum number of iteration per frame")
+	numberColors := flag.Int("colors", 200, "number of colors used to graph Mandelbroot set")
+	windowSize := flag.Int("size", 700, "window size")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: %s [flags] [x] [y]\n", os.Args[0])
+		flag.PrintDefaults()
 	}
-	err = pprof.StartCPUProfile(cpufile)
-	if err != nil {
-		panic(err)
+	flag.Parse()
+
+	if *profFlag {
+		cpufile, err := os.Create("cpu.pprof")
+		if err != nil {
+			panic(err)
+		}
+		err = pprof.StartCPUProfile(cpufile)
+		if err != nil {
+			panic(err)
+		}
+		defer cpufile.Close()
+		defer pprof.StopCPUProfile()
 	}
-	defer cpufile.Close()
-	defer pprof.StopCPUProfile()
 
 	x := -1.16278126
 	y := 0.27134518
-	if len(os.Args) == 3 {
+	if len(flag.Args()) == 1 || len(flag.Args()) > 2 {
+		flag.Usage()
+		panic("Wrong number of arguments")
+	} else if len(flag.Args()) == 2 {
 		var err error
-		x, err = strconv.ParseFloat(os.Args[1], 64)
+		x, err = strconv.ParseFloat(flag.Arg(0), 64)
 		if err != nil {
+			flag.Usage()
 			panic(err)
 		}
 
-		y, err = strconv.ParseFloat(os.Args[2], 64)
+		y, err = strconv.ParseFloat(flag.Arg(1), 64)
 		if err != nil {
+			flag.Usage()
 			panic(err)
 		}
-	} else {
-		fmt.Println("Użycie: ./mandelbrot-go <x> <y>")
-		fmt.Printf("Domyślny punkt: %.10f %.10f\n", x, y)
 	}
+
+	fmt.Printf("Point: %.10f %.10f\n", x, y)
 
 	center := vector2.Vector2{X: x, Y: y}
 
 	app := app.New()
 	w := app.NewWindow("Mandelbrot set")
-	w.Resize(fyne.NewSize(windowSize, windowSize))
+	w.Resize(fyne.NewSize(float32(*windowSize), float32(*windowSize)))
 
-	img := image.NewRGBA(image.Rect(0, 0, windowSize, windowSize))
+	img := image.NewRGBA(image.Rect(0, 0, *windowSize, *windowSize))
 	canvasImage := canvas.NewImageFromImage(img)
 	w.SetContent(canvasImage)
 
 	size := float64(2)
-	colorPallete := makeColorPalette(colorNumber)
+	colorPallete := makeColorPalette(*numberColors)
 	go func() {
 		for {
 			frame := generateFrame(
 				center,
 				size,
-				windowSize,
+				*windowSize,
+				PrecisionInfo{
+					precision: *precision,
+					mindiv:    *minDiv,
+					maxiter:   *maxiter,
+				},
 				colorPallete,
-				8,
+				*numberColors,
+				*numberWorkers,
 			)
 			canvasImage.Image = frame
 			canvasImage.Refresh()
-			size *= 0.9
+			size *= *zoom
 		}
 	}()
 
